@@ -1,0 +1,34 @@
+# procwatch example configuration
+# Copy to config.yaml and adjust to your environment.
+
+# How often to poll watched processes (Go duration string).
+poll_interval: 10s
+
+webhook:
+  # Required: URL to POST alert payloads to.
+  url: https://hooks.example.com/procwatch-alerts
+
+  # Optional: extra HTTP headers (e.g. for authentication).
+  headers:
+    Authorization: "Bearer YOUR_TOKEN_HERE"
+    X-Source: procwatch
+
+  # HTTP client timeout for webhook delivery (seconds).
+  timeout_seconds: 5
+
+processes:
+  # Monitor nginx by matching its command-line name.
+  - name: nginx
+    match_expr: nginx
+    max_cpu_percent: 85.0
+    max_memory_mb: 256
+
+  # Monitor a custom app via its PID file.
+  - name: myapp
+    pid_file: /run/myapp/myapp.pid
+    max_cpu_percent: 90.0
+    max_memory_mb: 1024
+
+  # Watch-only (no resource thresholds) — alert only on crash.
+  - name: cron
+    match_expr: cron
