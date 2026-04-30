@@ -1,6 +1,8 @@
+// Package config loads and validates procwatch configuration from a YAML file.
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -8,80 +10,63 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ProcessConfig defines a single watched process and its thresholds.
-type ProcessConfig struct {
-	Name        string  `yaml:"name"`
-	PIDFile     string  `yaml:"pid_file,omitempty"`
-	MatchExpr   string  `yaml:"match_expr,omitempty"`
-	MaxCPU      float64 `yaml:"max_cpu_percent,omitempty"`
-	MaxMemoryMB uint64  `yaml:"max_memory_mb,omitempty"`
-}
+// Default values.
+const defaultPollInterval = 15 * time.Second
 
-// WebhookConfig holds webhook delivery settings.
-type WebhookConfig struct {
-	URL     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers,omitempty"`
-	TimeoutSeconds int        `yaml:"timeout_seconds,omitempty"`
+// Process describes a single watched process entry.
+type Process struct {
+	Name        string  `yaml:"name"`
+	PIDFile     string  `yaml:"pid_file"`
+	CPULimit    float64 `yaml:"cpu_limit_percent"`  // 0 = disabled
+	MemLimitMB  float64 `yaml:"mem_limit_mb"`       // 0 = disabled
 }
 
 // Config is the top-level configuration structure.
 type Config struct {
-	PollInterval string          `yaml:"poll_interval"`
-	Webhook      WebhookConfig   `yaml:"webhook"`
-	Processes    []ProcessConfig `yaml:"processes"`
-
-	pollDuration time.Duration
+	WebhookURL   string        `yaml:"webhook_url"`
+	PollInterval time.Duration `yaml:"poll_interval"`
+	Processes    []Process     `yaml:"processes"`
 }
 
-// Load reads and parses a YAML config file from the given path.
+// Load reads and validates a YAML config file at the given path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("reading config file: %w", err)
+		return nil, fmt.Errorf("read config: %w", err)
 	}
 
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file: %w", err)
+		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
-	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+	if cfg.PollInterval <= 0 {
+		cfg.PollInterval = defaultPollInterval
+	}
+
+	if err := validate(&cfg); err != nil {
+		return nil, err
 	}
 
 	return &cfg, nil
 }
 
-// PollDuration returns the parsed poll interval duration.
-func (c *Config) PollDuration() time.Duration {
-	return c.pollDuration
-}
-
-func (c *Config) validate() error {
-	if c.Webhook.URL == "" {
-		return fmt.Errorf("webhook.url is required")
-	}
-	if len(c.Processes) == 0 {
-		return fmt.Errorf("at least one process must be defined")
+func validate(cfg *Config) error {
+	if cfg.WebhookURL == "" {
+		return errors.New("webhook_url is required")
 	}
 
-	interval := c.PollInterval
-	if interval == "" {
-		interval = "10s"
-	}
-	d, err := time.ParseDuration(interval)
-	if err != nil {
-		return fmt.Errorf("poll_interval %q is not a valid duration: %w", interval, err)
-	}
-	c.pollDuration = d
-
-	for i, p := range c.Processes {
-		if p.Name == "" {
-			return fmt.Errorf("processes[%d]: name is required", i)
+	for i, p := range cfg.Processes {
+		if p.Name == "" && p.PIDFile == "" {
+			return fmt.Errorf("process[%d]: must specify name or pid_file", i)
 		}
-		if p.PIDFile == "" && p.MatchExpr == "" {
-			return fmt.Errorf("processes[%d] (%s): pid_file or match_expr is required", i, p.Name)
+		if p.CPULimit < 0 {
+			return fmt.Errorf("process[%d]: cpu_limit_percent must be >= 0", i)
+		}
+		if p.MemLimitMB < 0 {
+			return fmt.Errorf("process[%d]: mem_limit_mb must be >= 0", i)
 		}
 	}
+
 	return nil
 }
