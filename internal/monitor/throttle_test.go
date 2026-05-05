@@ -59,3 +59,19 @@ func TestThrottler_Reset_UnknownKey(t *testing.T) {
 	// resetting a key that was never set should not panic
 	th.Reset("unknown", "down")
 }
+
+func TestThrottler_Allow_MultipleResets(t *testing.T) {
+	th := NewThrottler(5 * time.Minute)
+
+	// Cycle through allow -> block -> reset -> allow several times
+	// to ensure the throttler state remains consistent across resets.
+	for i := 0; i < 3; i++ {
+		if !th.Allow("nginx", "down") {
+			t.Fatalf("iteration %d: expected call after reset to be allowed", i)
+		}
+		if th.Allow("nginx", "down") {
+			t.Fatalf("iteration %d: expected second call within cooldown to be blocked", i)
+		}
+		th.Reset("nginx", "down")
+	}
+}
