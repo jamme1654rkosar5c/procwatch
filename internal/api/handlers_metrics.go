@@ -1,42 +1,47 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
-	"strings"
-
-	"github.com/robjkc/procwatch/internal/monitor"
+	"time"
 )
 
-// handleMetrics returns a Prometheus-compatible plain-text metrics exposition
-// for all watched processes (up/down gauge + alert count).
+// metricsProcess is the per-process payload returned by GET /metrics.
+type metricsProcess struct {
+	Name      string    `json:"name"`
+	Up        bool      `json:"up"`
+	PID       int       `json:"pid"`
+	CPUPct    float64   `json:"cpu_pct"`
+	MemRSSMB  float64   `json:"mem_rss_mb"`
+	CheckedAt time.Time `json:"checked_at"`
+}
+
+// metricsResponse is the top-level envelope for GET /metrics.
+type metricsResponse struct {
+	Processes []metricsProcess `json:"processes"`
+}
+
+// handleMetrics returns live resource metrics for every tracked process.
+//
+// GET /metrics
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	summary := s.summaryBuilder.Build()
+	all := s.status.All()
 
-	var sb strings.Builder
-
-	sb.WriteString("# HELP procwatch_process_up 1 if the process is currently running, 0 otherwise.\n")
-	sb.WriteString("# TYPE procwatch_process_up gauge\n")
-	for _, p := range summary.Processes {
-		upVal := 0
-		if p.Status == monitor.StatusUp {
-			upVal = 1
-		}
-		sb.WriteString(fmt.Sprintf("procwatch_process_up{process=%q} %d\n", p.Name, upVal))
+	procs := make([]metricsProcess, 0, len(all))
+	for _, st := range all {
+		procs = append(procs, metricsProcess{
+			Name:      st.Name,
+			Up:        st.Up,
+			PID:       st.PID,
+			CPUPct:    st.CPUPct,
+			MemRSSMB:  st.MemRSSMB,
+			CheckedAt: st.CheckedAt,
+		})
 	}
 
-	sb.WriteString("# HELP procwatch_process_alert_total Total number of alerts fired for the process.\n")
-	sb.WriteString("# TYPE procwatch_process_alert_total counter\n")
-	for _, p := range summary.Processes {
-		sb.WriteString(fmt.Sprintf("procwatch_process_alert_total{process=%q} %d\n", p.Name, p.AlertCount))
-	}
-
-	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(sb.String()))
+	writeJSON(w, http.StatusOK, metricsResponse{Processes: procs})
 }
