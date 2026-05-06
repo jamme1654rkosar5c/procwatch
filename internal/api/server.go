@@ -1,47 +1,49 @@
-// Package api provides an HTTP server exposing procwatch status endpoints.
 package api
 
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/user/procwatch/internal/monitor"
 )
 
-// Server is a lightweight HTTP server that exposes process status and history.
+// Server is the HTTP API server for procwatch.
 type Server struct {
 	httpServer *http.Server
-	registry   *monitor.StatusRegistry
+	mux        *http.ServeMux
+	status     *monitor.StatusRegistry
 	history    *monitor.History
 	summary    *monitor.SummaryBuilder
 }
 
-// NewServer creates a new API server bound to addr.
-func NewServer(addr string, registry *monitor.StatusRegistry, history *monitor.History, summary *monitor.SummaryBuilder) *Server {
+// NewServer constructs a Server bound to addr.
+func NewServer(
+	addr string,
+	status *monitor.StatusRegistry,
+	history *monitor.History,
+	summary *monitor.SummaryBuilder,
+) *Server {
 	s := &Server{
-		registry: registry,
-		history:  history,
-		summary:  summary,
+		mux:     http.NewServeMux(),
+		status:  status,
+		history: history,
+		summary: summary,
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", s.handleHealthz)
-	mux.HandleFunc("/status", s.handleStatus)
-	mux.HandleFunc("/history", s.handleHistory)
-	mux.HandleFunc("/summary", s.handleSummary)
-
-	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      mux,
-		ReadTimeout:  5 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  30 * time.Second,
-	}
+	s.httpServer = &http.Server{Addr: addr, Handler: s.mux}
+	s.registerRoutes()
 	return s
 }
 
-// Start begins listening and serving. It blocks until the server stops.
+func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("/healthz", s.handleHealthz)
+	s.mux.HandleFunc("/status", s.handleStatus)
+	s.mux.HandleFunc("/history", s.handleHistory)
+}
+
+// Handler returns the underlying http.Handler (for testing).
+func (s *Server) Handler() http.Handler { return s.mux }
+
+// Start begins listening in a goroutine.
 func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
