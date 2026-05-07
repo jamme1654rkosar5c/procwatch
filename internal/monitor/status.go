@@ -61,3 +61,11 @@ func (r *StatusRegistry) All() []ProcessStatus {
 	}
 	return out
 }
+
+// Delete removes the status entry for a named process.
+// It is a no-op if the process is not currently tracked.
+func (r *StatusRegistry) Delete(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.statuses, name)
+}
