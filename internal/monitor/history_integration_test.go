@@ -41,3 +41,26 @@ func TestWatcher_tick_RecordsDownEvent(t *testing.T) {
 		t.Errorf("expected event type 'down', got %q", records[0].EventType)
 	}
 }
+
+// TestWatcher_tick_RecordsDownEvent_NoWebhook verifies that a down event is
+// still recorded in History even when no webhook URL is configured.
+func TestWatcher_tick_RecordsDownEvent_NoWebhook(t *testing.T) {
+	cfg := config.Process{
+		Name: "ghost-proc-no-webhook",
+	}
+
+	sender := alert.NewSender(5)
+	hist := NewHistory(50)
+	w := newTestWatcher(t, cfg, sender)
+	w.history = hist
+
+	w.tick()
+
+	records := hist.ForProcess("ghost-proc-no-webhook")
+	if len(records) == 0 {
+		t.Fatal("expected at least one history record for ghost-proc-no-webhook, got none")
+	}
+	if records[0].EventType != "down" {
+		t.Errorf("expected event type 'down', got %q", records[0].EventType)
+	}
+}
